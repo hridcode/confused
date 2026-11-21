@@ -35,21 +35,38 @@ COMIC_SANS_16 = pygame.font.Font("fonts/Comic Sans MS.ttf", 16)
 COMIC_SANS_40 = pygame.font.Font("fonts/Comic Sans MS.ttf", 40)
 
 class Player:
-    def __init__(self, x = 0, y = 0):
+    def __init__(self, x = 0, y = 0, platforms = []):
         self.x = x
         self.y = y
+
+        self.platforms = platforms
         
         self.is_jumping = False
         self.jump_frame = 0
+        self.jump_length = 36
+        
         self.is_falling = False
-        self.fall_height = 0
+        self.fall_velocity = 0
+        self.fall_acceleration = 1
         
         self.x_velocity = 0
         self.x_direction = 1
         self.x_acceleration = 0.4
         self.x_max_velocity = 5
 
-    def draw(self):
+    def update(self):
+        if not self.collideany():
+            self.is_falling = True
+
+        if self.is_falling:
+            self.fall_velocity += self.fall_acceleration
+            self.y += self.fall_velocity
+            if self.collideany():
+                self.is_falling = False
+                self.fall_velocity = 0
+
+        print(f"{self.is_falling=}, {self.fall_velocity=}")
+
         pygame.draw.rect(win, (255, 255, 0), (self.x, self.y, 50, 50))
 
     def move(self, direction, stop = False):
@@ -64,7 +81,64 @@ class Player:
         else:
             self.x_velocity = 0
 
-player = Player(0, HEIGHT - 50)
+    def jump(self):
+        if not self.is_jumping:
+            if self.collideany():
+                self.is_jumping = True
+        else:
+            jump_offset = max(0, 25 - self.jump_frame)
+            self.y -= jump_offset
+            self.jump_frame += 1
+            if self.jump_frame == self.jump_length:
+                self.is_jumping = False
+                self.jump_frame = 0
+                return
+
+            if self.collideany():
+                self.is_jumping = False
+                self.jump_frame = 0
+
+                hit_platform = self.collideanyreturn()[0]
+
+                if self.fall_velocity <= jump_offset:
+                    self.y = hit_platform.y + hit_platform.height + 1
+                else:
+                    self.y = hit_platform.y - 50
+                    self.is_falling = False
+
+                print(f"{self.fall_velocity=}, {jump_offset=}, {hit_platform=}")
+
+                return
+
+    def collide(self, platform):
+        player_rect = pygame.Rect(self.x, self.y, 50, 50)
+        platform_rect = pygame.Rect(platform.x, platform.y, platform.width, platform.height)
+
+        return player_rect.colliderect(platform_rect)
+
+    def collideany(self):
+        return any([self.collide(platform) for platform in self.platforms])
+
+    def collideanyreturn(self):
+        return [platform for platform in self.platforms if self.collide(platform)]
+
+class Platform:
+    def __init__(self, x, y, width, height):
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+
+    def draw(self):
+        pygame.draw.rect(win, (125, 59, 17), (self.x, self.y, self.width, self.height))
+
+platform1 = Platform(0, 400, 300, 30)
+platform2 = Platform(500, 500, 300, 30)
+ground = Platform(0, HEIGHT, WIDTH, 10)
+
+platforms = [platform1, platform2, ground]
+
+player = Player(0, HEIGHT - 50, platforms)
 
 while True:
     clock.tick_busy_loop(120)
@@ -73,6 +147,9 @@ while True:
         if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_w or event.key == pygame.K_UP:
+                player.jump()
 
     keys = pygame.key.get_pressed()
 
@@ -83,8 +160,14 @@ while True:
     else:
         player.move(1, stop = True)
 
+    if player.is_jumping:
+        player.jump()
+
     win.fill((255, 255, 255))
 
-    player.draw()
+    for platform in platforms:
+        platform.draw()
+
+    player.update()
 
     pygame.display.update()
