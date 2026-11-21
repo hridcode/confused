@@ -31,8 +31,23 @@ class Text:
         
         win.blit(self._surface, (adj_x, adj_y))
 
-COMIC_SANS_16 = pygame.font.Font("fonts/Comic Sans MS.ttf", 16)
-COMIC_SANS_40 = pygame.font.Font("fonts/Comic Sans MS.ttf", 40)
+class Button:
+    def __init__(self, font, text, x, y, width, height, align_x, align_y, text_color, background_color, hover_color = (255, 255, 255), border_color=(0, 0, 0), border_width=0):
+        self.rect = pygame.Rect(x - align_x * width / 2, y - align_y * height / 2, width, height)
+        self.text = Text(font, text, self.rect.centerx, self.rect.centery, 1, 1, text_color)
+        self.background_color = background_color
+        self.hovered = False
+        self.hover_color = hover_color
+        self.border_color = border_color
+        self.border_width = border_width
+
+    def display(self):
+        pygame.draw.rect(win, self.background_color if not self.hovered else self.hover_color, self.rect)
+        pygame.draw.rect(win, self.border_color, self.rect, self.border_width)
+        self.text.display()
+
+    def isover(self, x, y):
+        return self.rect.collidepoint((x, y))
 
 class Player:
     def __init__(self, x = 0, y = 0, platforms = []):
@@ -61,11 +76,12 @@ class Player:
         if self.is_falling:
             self.fall_velocity += self.fall_acceleration
             self.y += self.fall_velocity
-            if self.collideany():
+            if self.collideany() and not self.is_jumping:
                 self.is_falling = False
                 self.fall_velocity = 0
+                self.y = self.collideanyreturn()[0].y - 49
 
-        print(f"{self.is_falling=}, {self.fall_velocity=}")
+        print(f"{self.is_falling=}, {self.fall_velocity=}, {self.collideanyreturn()}")
 
         pygame.draw.rect(win, (255, 255, 0), (self.x, self.y, 50, 50))
 
@@ -95,14 +111,17 @@ class Player:
                 return
 
             if self.collideany():
+                print("Collision detected!")
                 self.is_jumping = False
                 self.jump_frame = 0
 
                 hit_platform = self.collideanyreturn()[0]
 
                 if self.fall_velocity <= jump_offset:
+                    print("Collision on bottom")
                     self.y = hit_platform.y + hit_platform.height + 1
                 else:
+                    print("Collision on top")
                     self.y = hit_platform.y - 50
                     self.is_falling = False
 
@@ -132,13 +151,54 @@ class Platform:
     def draw(self):
         pygame.draw.rect(win, (125, 59, 17), (self.x, self.y, self.width, self.height))
 
-platform1 = Platform(0, 400, 300, 30)
+platform1 = Platform(0, 400, 400, 30)
 platform2 = Platform(500, 500, 300, 30)
 ground = Platform(0, HEIGHT, WIDTH, 10)
 
 platforms = [platform1, platform2, ground]
 
 player = Player(0, HEIGHT - 50, platforms)
+
+COMIC_SANS_16 = pygame.font.Font("fonts/Comic Sans MS.ttf", 16)
+COMIC_SANS_40 = pygame.font.Font("fonts/Comic Sans MS.ttf", 40)
+
+home_title = Text(COMIC_SANS_40, "confused", WIDTH // 2, HEIGHT // 2 - 100, 1, 1, (0, 0, 0))
+
+play_button = Button(
+    font = COMIC_SANS_16, 
+    text = "Play", 
+    x = WIDTH // 2 - 170, 
+    y = HEIGHT // 2 + 100, 
+    width = 150, 
+    height = 50, 
+    align_x = 1, 
+    align_y = 1, 
+    text_color = (0, 0, 0), 
+    background_color = (255, 255, 255),
+    hover_color = (200, 200, 200), 
+    border_color = (0, 0, 0), 
+    border_width = 3
+)
+
+instructions_button = Button(
+    font = COMIC_SANS_16, 
+    text = "Instructions", 
+    x = WIDTH // 2 + 170, 
+    y = HEIGHT // 2 + 100, 
+    width = 150, 
+    height = 50, 
+    align_x = 1, 
+    align_y = 1, 
+    text_color = (0, 0, 0), 
+    background_color = (255, 255, 255), 
+    hover_color = (200, 200, 200),
+    border_color = (0, 0, 0), 
+    border_width = 3
+)
+
+buttons = [play_button, instructions_button]
+
+game_started = False
 
 while True:
     clock.tick_busy_loop(120)
@@ -150,6 +210,9 @@ while True:
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_w or event.key == pygame.K_UP:
                 player.jump()
+        elif event.type == pygame.MOUSEMOTION:
+            for button in buttons:
+                button.hovered = button.isover(*event.pos)
 
     keys = pygame.key.get_pressed()
 
@@ -165,9 +228,15 @@ while True:
 
     win.fill((255, 255, 255))
 
-    for platform in platforms:
-        platform.draw()
+    if not game_started:
+        # Home screen
+        home_title.display()
+        for button in buttons:
+            button.display()
 
-    player.update()
+    # for platform in platforms:
+    #     platform.draw()
+
+    # player.update()
 
     pygame.display.update()
