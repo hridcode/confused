@@ -1,5 +1,6 @@
 import pygame
 import sys
+import random
 
 pygame.init()
 pygame.font.init()
@@ -62,7 +63,7 @@ class Player:
         
         self.is_falling = False
         self.fall_velocity = 0
-        self.fall_acceleration = 1
+        self.fall_acceleration = 0.4
         
         self.x_velocity = 0
         self.x_direction = 1
@@ -102,7 +103,7 @@ class Player:
             if self.collideany():
                 self.is_jumping = True
         else:
-            jump_offset = max(0, 25 - self.jump_frame)
+            jump_offset = max(0, (16 / self.fall_acceleration - self.jump_frame) * self.fall_acceleration)
             self.y -= jump_offset
             self.jump_frame += 1
             if self.jump_frame == self.jump_length:
@@ -142,27 +143,69 @@ class Player:
         return [platform for platform in self.platforms if self.collide(platform)]
 
 class Platform:
-    def __init__(self, x, y, width, height):
+    def __init__(self, x, y, width, height, color = (125, 59, 17)):
         self.x = x
         self.y = y
         self.width = width
         self.height = height
+        self.color = color
 
     def draw(self):
-        pygame.draw.rect(win, (125, 59, 17), (self.x, self.y, self.width, self.height))
+        pygame.draw.rect(win, self.color, (self.x, self.y, self.width, self.height))
 
-platform1 = Platform(0, 400, 400, 30)
-platform2 = Platform(500, 500, 300, 30)
+class Orb:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    def draw(self):
+        pygame.draw.circle(win, (0, 255, 0), (self.x, self.y), 20)
+
+    def collision(self, player):
+        player_rect = pygame.Rect(player.x, player.y, 50, 50)
+        closest_x = max(player_rect.left, min(self.x, player_rect.right))
+        closest_y = max(player_rect.top, min(self.y, player_rect.bottom))
+        
+        dx = self.x - closest_x
+        dy = self.y - closest_y
+        
+        return (dx * dx + dy * dy) <= 400
+
+class Pickup:
+    def __init__(self, x, y, icon, effect):
+        self.x = x
+        self.y = y
+        self.icon = icon
+        self.effect = effect
+
+    def draw(self):
+        win.blit(self.icon, (self.x - 15, self.y - 15))
+
+levels = [
+    [
+        Platform(0, 400, 400, 30),
+        Platform(500, 500, 300, 30),
+        Platform(200, 300, 400, 30),
+        Orb(400, 200)
+    ]
+]
+
+def get_platforms(level):
+    return [game_object for game_object in level if type(game_object) == Platform]
+
+def get_orb(level):
+    return [game_object for game_object in level if type(game_object) == Orb][0]
+
 ground = Platform(0, HEIGHT, WIDTH, 10)
 
-platforms = [platform1, platform2, ground]
-
-player = Player(0, HEIGHT - 50, platforms)
+player = Player(0, HEIGHT - 50, [])
 
 COMIC_SANS_16 = pygame.font.Font("fonts/Comic Sans MS.ttf", 16)
 COMIC_SANS_40 = pygame.font.Font("fonts/Comic Sans MS.ttf", 40)
 
 home_title = Text(COMIC_SANS_40, "confused", WIDTH // 2, HEIGHT // 2 - 100, 1, 1, (0, 0, 0))
+instructions_title = Text(COMIC_SANS_40, "Instructions", WIDTH // 2, 100, 1, 1, (0, 0, 0))
+current_level_display = Text(COMIC_SANS_16, "Level: 1", 30, 30, 0, 0, (0, 0, 0))
 
 play_button = Button(
     font = COMIC_SANS_16, 
@@ -199,6 +242,51 @@ instructions_button = Button(
 buttons = [play_button, instructions_button]
 
 game_started = False
+level = 1
+screen = "home"
+
+parameters = {
+    'background_color': {
+        'type': 'color',
+        'value': (255, 255, 255)
+    },
+    'platform_color': {
+        'type': 'color',
+        'value': (125, 59, 17)
+    },
+    'player_color': {
+        'type': 'color',
+        'value': (255, 255, 0)
+    },
+    'player_face': {
+        'type': 'predef',
+        'values': [""],
+        'value': 0
+    },
+    'objects': {
+        'type': 'objects',
+        'values': [""],
+        'value': []
+    }
+}
+
+pickups = []
+
+def random_pickup():
+    key = list(parameters.keys())
+
+    effect = None
+
+    match parameters[key].type:
+        case 'color':
+            effect = (key, (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)))
+        case 'predef':
+            effect = (key, random.randint(0, len(parameters[key]["values"]) - 1))            
+        case _:
+            pass
+
+question_icon = pygame.image.load("fonts/question-icon.webp")
+question_icon = pygame.transform.smoothscale(question_icon, (30, 30))
 
 while True:
     clock.tick_busy_loop(120)
@@ -213,6 +301,9 @@ while True:
         elif event.type == pygame.MOUSEMOTION:
             for button in buttons:
                 button.hovered = button.isover(*event.pos)
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if play_button.isover(*event.pos):
+                screen = "playing"
 
     keys = pygame.key.get_pressed()
 
@@ -226,17 +317,34 @@ while True:
     if player.is_jumping:
         player.jump()
 
-    win.fill((255, 255, 255))
+    win.fill(parameters["background_color"])
 
-    if not game_started:
+    if screen == "home":
         # Home screen
         home_title.display()
         for button in buttons:
             button.display()
+    elif screen == "instructions":
+        instructions_title.display()
+    elif screen == "playing":
+        current_level = levels[level - 1]
+        platforms = get_platforms(current_level) + [ground, ]
+        orb = get_orb(current_level)
 
-    # for platform in platforms:
-    #     platform.draw()
+        for platform in platforms:
+            platform.draw()
 
-    # player.update()
+        orb.draw()
+
+        player.platforms = platforms
+        player.update()
+
+        current_level_display.text = f"Level: {level}"
+        current_level_display.display()
+
+        if orb.collision(player):
+            level += 1
+            if level - 1 >= len(levels):
+                screen = "win"
 
     pygame.display.update()
