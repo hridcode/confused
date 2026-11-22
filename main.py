@@ -54,6 +54,9 @@ class Button:
     def isover(self, x, y):
         return self.rect.collidepoint((x, y))
 
+jump_sound = pygame.mixer.Sound("assets/jump.wav")
+jump_sound.set_volume(0.6)
+
 class Player:
     def __init__(self, x = 0, y = 0, platforms = []):
         self.x = x
@@ -117,6 +120,7 @@ class Player:
     def jump(self):
         if not self.is_jumping:
             if self.collideany():
+                jump_sound.play()
                 self.is_jumping = True
         else:
             jump_offset = max(0, (16 / self.fall_acceleration - self.jump_frame) * self.fall_acceleration)
@@ -285,16 +289,18 @@ game_parameters = {
 }
 
 class Pickup:
-    def __init__(self, x, y, icon, effect):
+    def __init__(self, x, y, effect):
         self.x = x
         self.y = y
         self.width = 30
         self.height = 30
-        self.icon = icon
         self.effect = effect
+        self.icon_text = Text(JBMONO_16, "?", self.x, self.y, 1, 1, (200, 0, 0))
 
     def draw(self):
-        win.blit(self.icon, (self.x - 15, self.y - 15))
+        pygame.draw.rect(win, (200, 200, 0), (self.x - self.width / 2, self.y - self.height / 2, self.width, self.height), border_radius = 5)
+        pygame.draw.rect(win, (0, 0, 0), (self.x - self.width / 2, self.y - self.height / 2, self.width, self.height), border_radius = 5, width = 3)
+        self.icon_text.display()
 
     def trigger_effect(self):
         if self.effect == "gravity":
@@ -345,8 +351,27 @@ levels = [
         Platform(600, 300, 30, 150),
         Orb(700, 400),
         Acid(100)
+    ],
+    [
+        Platform(100, 500, 300, 30),
+        Platform(100, 400, 300, 30),
+        Platform(400, 300, 300, 30),
+        Platform(400, 200, 300, 30),
+        Saw(300, 600, 30),
+        Acid(100),
+        Orb(700, 100)
+    ],
+    [
+        Platform(0, 400, 50, 50, oscillate_x=(25, 105), oscillate_y=(100, 100)),
+        Platform(375, 400, 50, 50, oscillate_x=(25, 110), oscillate_y=(100, 95)),
+        Platform(750, 400, 50, 50, oscillate_x=(25, 115), oscillate_y=(100, 90)),
+        Saw(200, 200, 30),
+        Saw(200, 600, 30),
+        Saw(600, 200, 30),
+        Saw(600, 600, 30),
+        Orb(400, 100)                
     ]
-][::-1]
+]
 
 def get_platforms(level):
     return [game_object for game_object in level if type(game_object) == Platform]
@@ -371,6 +396,12 @@ home_title = Text(JBMONO_40, "confused", WIDTH // 2, HEIGHT // 2 - 100, 1, 1, (0
 instructions_title = Text(JBMONO_40, "Instructions", WIDTH // 2, 100, 1, 1, (0, 0, 0))
 current_level_display = Text(JBMONO_16, "Level: 1", 30, 30, 0, 0, (0, 0, 0))
 money_display = Text(JBMONO_16, "$25", WIDTH - 30, 30, 2, 0, (0, 180, 0))
+
+lose_heading = Text(JBMONO_40, "You Lose!", WIDTH // 2, HEIGHT // 2 - 100, 1, 1, (255, 0, 0))
+lose_subtext = Text(JBMONO_16, "get better nerd", WIDTH // 2, HEIGHT // 2 + 100, 1, 1, (0, 0, 0))
+
+win_heading = Text(JBMONO_40, "You Win!", WIDTH // 2, HEIGHT // 2 - 100, 1, 1, (0, 200, 0))
+win_subtext = Text(JBMONO_16, "the government has been destroyed. congratulations.", WIDTH // 2, HEIGHT // 2 + 100, 1, 1, (0, 0, 0))
 
 play_button = Button(
     font = JBMONO_16, 
@@ -414,9 +445,6 @@ transition_frame = 0
 money = 25
 
 pickups = []
-
-question_icon = pygame.image.load("assets/question-icon.webp")
-question_icon = pygame.transform.smoothscale(question_icon, (30, 30))
 
 while True:
     clock.tick_busy_loop(120)
@@ -472,8 +500,10 @@ while True:
             pickup_x = random.randint(platform.x, platform.x + platform.width)
             pickup_y = platform.y - 20
             print(parameter)
-            pickup = Pickup(pickup_x, pickup_y, question_icon, parameter)
+            pickup = Pickup(pickup_x, pickup_y, parameter)
             pickups.append(pickup)
+            if len(pickups) > 3:
+                pickups.pop(0)
 
         for object in current_level:
             object.draw()
@@ -481,10 +511,16 @@ while True:
         if acid and random.randint(0, 40) == 1:
             acid.spawn()
 
+        if acid:
+            if acid.collide(player):
+                player.die()
+                money -= 2
+
         for pickup_index, pickup in enumerate(pickups):
             pickups[pickup_index].draw()
             if player.collide(pickups[pickup_index]):
                 pickups[pickup_index].trigger_effect()
+                money += random.randint(-200, 200) / 100
                 pickups[pickup_index] = None
 
         pickups = [i for i in pickups if i]
@@ -495,7 +531,7 @@ while True:
         current_level_display.text = f"Level: {level}"
         current_level_display.display()
 
-        money_display.text = f"${money}"
+        money_display.text = f"${money:.2f}"
         money_display.display()
 
         if orb.collision(player):
@@ -504,6 +540,7 @@ while True:
 
         if any(player.collide(fatal) for fatal in fatals):
             player.die()
+            money -= 5
 
         if screen == "transition":
             transition_frame += 0.2
@@ -529,5 +566,14 @@ while True:
                 transition_surface.fill((0, 0, 0, ((30 - transition_frame) / 10) * 255))
 
             win.blit(transition_surface, (0, 0))
+    elif screen == "win":
+        win_heading.display()
+        win_subtext.display()
+    elif screen == "lose":
+        lose_heading.display()
+        lose_subtext.display()
+
+    if money < 0:
+        screen = "lose"
 
     pygame.display.update()
