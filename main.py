@@ -33,6 +33,9 @@ class Text:
         
         win.blit(self._surface, (adj_x, adj_y))
 
+    def rerender(self):
+        self._surface = self.font.render(self.text, True, self.color)
+
 class Button:
     def __init__(self, font, text, x, y, width, height, align_x, align_y, text_color, background_color, hover_color = (255, 255, 255), border_color=(0, 0, 0), border_width=0):
         self.rect = pygame.Rect(x - align_x * width / 2, y - align_y * height / 2, width, height)
@@ -64,16 +67,23 @@ class Player:
         
         self.is_falling = False
         self.fall_velocity = 0
-        self.fall_acceleration = 0.4
+        self.fall_acceleration = 0.3
         
         self.x_velocity = 0
         self.x_direction = 1
-        self.x_acceleration = 0.4
-        self.x_max_velocity = 5
+        self.x_acceleration = 0.2
+        self.x_max_velocity = 7
 
     def update(self):
         if not self.collideany():
             self.is_falling = True
+        else:
+            collision = self.collideanyreturn()[0]
+            if not self.is_jumping:
+                if self.y <= collision.y + collision.height / 2:
+                    self.y = collision.y - 49
+                else:
+                    self.y = collision.y + collision.height
 
         if self.is_falling:
             self.fall_velocity += self.fall_acceleration
@@ -83,9 +93,8 @@ class Player:
                 self.fall_velocity = 0
                 self.y = self.collideanyreturn()[0].y - 49
 
-        print(f"{self.is_falling=}, {self.fall_velocity=}, {self.collideanyreturn()}")
-
         pygame.draw.rect(win, (255, 255, 0), (self.x, self.y, 50, 50))
+        pygame.draw.rect(win, (0, 0, 0), (self.x, self.y, 50, 50), width=2)
 
     def move(self, direction, stop = False):
         if self.x_direction != direction:
@@ -96,6 +105,12 @@ class Player:
             self.x_velocity += self.x_acceleration
             self.x_velocity = min(self.x_velocity, self.x_max_velocity)
             self.x += self.x_velocity * self.x_direction
+            if self.x <= 0:
+                self.x = 0
+                self.x_velocity = 0
+            elif self.x >= WIDTH - 50:
+                self.x = WIDTH - 50
+                self.x_velocity = 0
         else:
             self.x_velocity = 0
 
@@ -113,13 +128,12 @@ class Player:
                 return
 
             if self.collideany():
-                print("Collision detected!")
                 self.is_jumping = False
                 self.jump_frame = 0
 
                 hit_platform = self.collideanyreturn()[0]
 
-                if self.fall_velocity <= jump_offset:
+                if self.fall_velocity < jump_offset:
                     print("Collision on bottom")
                     self.y = hit_platform.y + hit_platform.height + 1
                 else:
@@ -148,23 +162,52 @@ class Player:
         player.y = HEIGHT - 50
 
 class Platform:
-    def __init__(self, x, y, width, height, color = (125, 59, 17)):
+    def __init__(self, x, y, width, height, color = (125, 59, 17), oscillate_x = (0, 1), oscillate_y = (0, 1)):
         self.x = x
         self.y = y
+        self.static_x = x
+        self.static_y = y
         self.width = width
         self.height = height
         self.color = color
+        self.osc_x_length = oscillate_x[0]
+        self.osc_x_speed = oscillate_x[1] * 5
+        self.osc_y_length = oscillate_y[0]
+        self.osc_y_speed = oscillate_y[1] * 5
+        self.osc_frame = 0
+        self.dir_x = 1
+        self.dir_y = 1
+        self.last_offset_x = 0
+        self.last_offset_y = 0
 
     def draw(self):
+        self.x = self.static_x + int(math.sin(self.osc_frame * math.pi * 2 / (self.osc_x_speed / 2)) * self.osc_x_length)
+        self.y = self.static_y + int(math.sin(self.osc_frame * math.pi * 2 / (self.osc_y_speed / 2)) * self.osc_y_length)
+
         pygame.draw.rect(win, self.color, (self.x, self.y, self.width, self.height))
+
+        # Stripes
+        num_stripes = self.width // 50
+        for i in range(num_stripes):
+            point1 = (self.x + i * 50, self.y + self.height - 2)
+            point2 = (self.x + i * 50 + 25, self.y)
+            point3 = (self.x + i * 50 + 50, self.y)
+            point4 = (self.x + i * 50 + 25, self.y + self.height - 2)
+            pygame.draw.polygon(win, (212, 152, 83), (point1, point2, point3, point4))
+
+        pygame.draw.rect(win, (0, 0, 0), (self.x, self.y, self.width, self.height), width=2)
+        
+        self.osc_frame += 1
 
 class Orb:
     def __init__(self, x, y):
         self.x = x
         self.y = y
+        self.color = (0, 255, 0)
 
     def draw(self):
-        pygame.draw.circle(win, (0, 255, 0), (self.x, self.y), 20)
+        pygame.draw.circle(win, self.color, (self.x, self.y), 20)
+        pygame.draw.circle(win, (0, 0, 0), (self.x, self.y), 20, width = 2)
 
     def collision(self, player):
         player_rect = pygame.Rect(player.x, player.y, 50, 50)
@@ -185,10 +228,11 @@ class Saw:
         self.radius = radius
         self.angle = 0
         self.spin = spin
+        self.color = (0, 0, 0)
 
     def draw(self):
         # Base circle
-        pygame.draw.circle(win, (0, 0, 0), (self.x + self.radius, self.y + self.radius), self.radius / 2)
+        pygame.draw.circle(win, self.color, (self.x + self.radius, self.y + self.radius), self.radius / 2)
 
         # Spikes
         for spike in range(12):
@@ -204,19 +248,59 @@ class Saw:
                 self.x + self.radius + math.cos(spike * 30 + self.angle) * self.radius,
                 self.y + self.radius + math.sin(spike * 30 + self.angle) * self.radius
             )
-            pygame.draw.polygon(win, (0, 0, 0), (point1, point2, point3))
+            pygame.draw.polygon(win, self.color, (point1, point2, point3))
 
         self.angle += self.spin
+
+class Acid:
+    def __init__(self, y):
+        self.y = y
+        self.particles = []
+
+    def draw(self):
+        for particle in self.particles:
+            pygame.draw.circle(win, (190, 220, 0), particle["coords"], 5)
+            pygame.draw.circle(win, (0, 0, 0), particle["coords"], 7, 2)
+            particle["coords"][1] += particle["velocity"]
+            particle["velocity"] += particle["acceleration"]
+
+    def spawn(self):
+        self.particles.append({
+            "coords": [random.randint(20, WIDTH - 20), self.y],
+            "velocity": 0.2,
+            "acceleration": random.uniform(0.1, 0.2)
+        })
+
+    def collide(self, object):
+        for particle in self.particles:
+            particle_rect = pygame.Rect(particle[0] - 5, particle[1] - 5, 10, 10)
+            object_rect = pygame.Rect(object.x, object.y, object.width, object.height)
+            if particle_rect.colliderect(object_rect):
+                return True
+
+        return False
+
+game_parameters = {
+    'gravity': 0.4
+}
 
 class Pickup:
     def __init__(self, x, y, icon, effect):
         self.x = x
         self.y = y
+        self.width = 30
+        self.height = 30
         self.icon = icon
         self.effect = effect
 
     def draw(self):
         win.blit(self.icon, (self.x - 15, self.y - 15))
+
+    def trigger_effect(self):
+        if self.effect == "gravity":
+            game_parameters[self.effect] = random.randint(2, 18) / 50
+
+        print(f"{self.effect} = {game_parameters[self.effect]}")
 
 levels = [
     [
@@ -232,8 +316,37 @@ levels = [
         Platform(500, 200, 300, 30),
         Saw(600, 350, 20, spin = 0.1),
         Orb(400, 100)
+    ],
+    [
+        Platform(300, 500, 200, 30, oscillate_x=(100, 100)),
+        Platform(300, 400, 200, 30, oscillate_x=(100, 99)),
+        Platform(300, 300, 200, 30, oscillate_x=(100, 98)),
+        Platform(300, 200, 200, 30, oscillate_x=(100, 97)),
+        Orb(400, 100)
+    ],
+    [
+        Platform(100, 300, 200, 30, oscillate_y=(200, 100)),
+        Platform(500, 300, 200, 30, oscillate_y=(200, 100)),
+        Saw(200, 50, 10, spin = 0.1),
+        Saw(600, 50, 10, spin = 0.1),
+        Orb(400, 100)
+    ],
+    [
+        Platform(0, 500, 125, 30),
+        Platform(225, 500, 150, 30),
+        Saw(300, 450, 20, spin = 0.1),
+        Platform(400, 250, 400, 30, oscillate_y=(150, 150)),
+        Saw(500, 200, 10, spin = 0.1),
+        Saw(600, 100, 10, spin = 0.1),
+        Orb(500, 50)
+    ],
+    [
+        Platform(200, 400, 100, 30, oscillate_x=(200, 100), oscillate_y=(100, 100)),
+        Platform(600, 300, 30, 150),
+        Orb(700, 400),
+        Acid(100)
     ]
-]
+][::-1]
 
 def get_platforms(level):
     return [game_object for game_object in level if type(game_object) == Platform]
@@ -244,20 +357,23 @@ def get_orb(level):
 def get_fatal_objects(level):
     return [game_object for game_object in level if type(game_object) in [Saw,]]
 
+def get_acid(level):
+    return ([game_object for game_object in level if type(game_object) == Acid] or [None,])[0]
+
 ground = Platform(0, HEIGHT, WIDTH, 10)
 
 player = Player(0, HEIGHT - 50, [])
 
-COMIC_SANS_16 = pygame.font.Font("fonts/Comic Sans MS.ttf", 16)
-COMIC_SANS_40 = pygame.font.Font("fonts/Comic Sans MS.ttf", 40)
+JBMONO_16 = pygame.font.Font("fonts/JetBrains Mono.ttf", 16)
+JBMONO_40 = pygame.font.Font("fonts/JetBrains Mono.ttf", 40)
 
-home_title = Text(COMIC_SANS_40, "confused", WIDTH // 2, HEIGHT // 2 - 100, 1, 1, (0, 0, 0))
-instructions_title = Text(COMIC_SANS_40, "Instructions", WIDTH // 2, 100, 1, 1, (0, 0, 0))
-current_level_display = Text(COMIC_SANS_16, "Level: 1", 30, 30, 0, 0, (0, 0, 0))
-money_display = Text(COMIC_SANS_16, "$25", WIDTH - 30, 30, 2, 0, (0, 180, 0))
+home_title = Text(JBMONO_40, "confused", WIDTH // 2, HEIGHT // 2 - 100, 1, 1, (0, 0, 0))
+instructions_title = Text(JBMONO_40, "Instructions", WIDTH // 2, 100, 1, 1, (0, 0, 0))
+current_level_display = Text(JBMONO_16, "Level: 1", 30, 30, 0, 0, (0, 0, 0))
+money_display = Text(JBMONO_16, "$25", WIDTH - 30, 30, 2, 0, (0, 180, 0))
 
 play_button = Button(
-    font = COMIC_SANS_16, 
+    font = JBMONO_16, 
     text = "Play", 
     x = WIDTH // 2 - 170, 
     y = HEIGHT // 2 + 100, 
@@ -273,7 +389,7 @@ play_button = Button(
 )
 
 instructions_button = Button(
-    font = COMIC_SANS_16, 
+    font = JBMONO_16, 
     text = "Instructions", 
     x = WIDTH // 2 + 170, 
     y = HEIGHT // 2 + 100, 
@@ -342,13 +458,36 @@ while True:
     elif screen == "instructions":
         instructions_title.display()
     elif screen == "playing" or screen == "transition":
+        player.fall_acceleration = game_parameters["gravity"]
+
         current_level = levels[level - 1]
         platforms = get_platforms(current_level) + [ground, ]
         orb = get_orb(current_level)
         fatals = get_fatal_objects(current_level)
+        acid = get_acid(current_level)
+
+        if random.randint(0, 1000) == 1:
+            platform = random.choice(platforms)
+            parameter = random.choice(list(game_parameters.keys()))
+            pickup_x = random.randint(platform.x, platform.x + platform.width)
+            pickup_y = platform.y - 20
+            print(parameter)
+            pickup = Pickup(pickup_x, pickup_y, question_icon, parameter)
+            pickups.append(pickup)
 
         for object in current_level:
             object.draw()
+
+        if acid and random.randint(0, 40) == 1:
+            acid.spawn()
+
+        for pickup_index, pickup in enumerate(pickups):
+            pickups[pickup_index].draw()
+            if player.collide(pickups[pickup_index]):
+                pickups[pickup_index].trigger_effect()
+                pickups[pickup_index] = None
+
+        pickups = [i for i in pickups if i]
 
         player.platforms = platforms
         player.update()
