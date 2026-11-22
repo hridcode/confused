@@ -37,7 +37,7 @@ class Text:
         self._surface = self.font.render(self.text, True, self.color)
 
 class Button:
-    def __init__(self, font, text, x, y, width, height, align_x, align_y, text_color, background_color, hover_color = (255, 255, 255), border_color=(0, 0, 0), border_width=0):
+    def __init__(self, font, text, x, y, width, height, align_x, align_y, text_color, background_color, hover_color = (255, 255, 255), border_color=(0, 0, 0), border_width=0, visible=True):
         self.rect = pygame.Rect(x - align_x * width / 2, y - align_y * height / 2, width, height)
         self.text = Text(font, text, self.rect.centerx, self.rect.centery, 1, 1, text_color)
         self.background_color = background_color
@@ -45,22 +45,32 @@ class Button:
         self.hover_color = hover_color
         self.border_color = border_color
         self.border_width = border_width
+        self.visible = visible
 
     def display(self):
+        if not self.visible: return
         pygame.draw.rect(win, self.background_color if not self.hovered else self.hover_color, self.rect)
         pygame.draw.rect(win, self.border_color, self.rect, self.border_width)
         self.text.display()
 
     def isover(self, x, y):
-        return self.rect.collidepoint((x, y))
+        return self.rect.collidepoint((x, y)) and self.visible
 
 jump_sound = pygame.mixer.Sound("assets/jump.wav")
+select_sound = pygame.mixer.Sound("assets/blipSelect.wav")
+pickup_sound = pygame.mixer.Sound("assets/pickupCoin.wav")
+end_sound = pygame.mixer.Sound("assets/explosion.wav")
+
 jump_sound.set_volume(0.6)
+select_sound.set_volume(0.6)
+pickup_sound.set_volume(0.6)
 
 class Player:
     def __init__(self, x = 0, y = 0, platforms = []):
         self.x = x
         self.y = y
+        self.width = 50
+        self.height = 50
 
         self.platforms = platforms
         
@@ -84,7 +94,7 @@ class Player:
             collision = self.collideanyreturn()[0]
             if not self.is_jumping:
                 if self.y <= collision.y + collision.height / 2:
-                    self.y = collision.y - 49
+                    self.y = collision.y - self.height + 1
                 else:
                     self.y = collision.y + collision.height
 
@@ -94,10 +104,10 @@ class Player:
             if self.collideany() and not self.is_jumping:
                 self.is_falling = False
                 self.fall_velocity = 0
-                self.y = self.collideanyreturn()[0].y - 49
+                self.y = self.collideanyreturn()[0].y - self.height + 1
 
-        pygame.draw.rect(win, (255, 255, 0), (self.x, self.y, 50, 50))
-        pygame.draw.rect(win, (0, 0, 0), (self.x, self.y, 50, 50), width=2)
+        pygame.draw.rect(win, (255, 255, 0), (self.x, self.y, self.width, self.height))
+        pygame.draw.rect(win, (0, 0, 0), (self.x, self.y, self.width, self.height), width=2)
 
     def move(self, direction, stop = False):
         if self.x_direction != direction:
@@ -111,8 +121,8 @@ class Player:
             if self.x <= 0:
                 self.x = 0
                 self.x_velocity = 0
-            elif self.x >= WIDTH - 50:
-                self.x = WIDTH - 50
+            elif self.x >= WIDTH - self.width:
+                self.x = WIDTH - self.width
                 self.x_velocity = 0
         else:
             self.x_velocity = 0
@@ -142,7 +152,7 @@ class Player:
                     self.y = hit_platform.y + hit_platform.height + 1
                 else:
                     print("Collision on top")
-                    self.y = hit_platform.y - 50
+                    self.y = hit_platform.y - self.height
                     self.is_falling = False
 
                 print(f"{self.fall_velocity=}, {jump_offset=}, {hit_platform=}")
@@ -277,7 +287,7 @@ class Acid:
 
     def collide(self, object):
         for particle in self.particles:
-            particle_rect = pygame.Rect(particle[0] - 5, particle[1] - 5, 10, 10)
+            particle_rect = pygame.Rect(particle["coords"][0] - 5, particle["coords"][1] - 5, 10, 10)
             object_rect = pygame.Rect(object.x, object.y, object.width, object.height)
             if particle_rect.colliderect(object_rect):
                 return True
@@ -285,7 +295,9 @@ class Acid:
         return False
 
 game_parameters = {
-    'gravity': 0.4
+    'gravity': 0.4,
+    'x_accel': 0.2,
+    'x_max': 7
 }
 
 class Pickup:
@@ -305,6 +317,10 @@ class Pickup:
     def trigger_effect(self):
         if self.effect == "gravity":
             game_parameters[self.effect] = random.randint(2, 18) / 50
+        elif self.effect == "x_accel":
+            game_parameters[self.effect] = random.randint(1, 4) / 10
+        elif self.effect == "x_max":
+            game_parameters[self.effect] = random.randint(3, 15)
 
         print(f"{self.effect} = {game_parameters[self.effect]}")
 
@@ -366,9 +382,7 @@ levels = [
         Platform(375, 400, 50, 50, oscillate_x=(25, 110), oscillate_y=(100, 95)),
         Platform(750, 400, 50, 50, oscillate_x=(25, 115), oscillate_y=(100, 90)),
         Saw(200, 200, 30),
-        Saw(200, 600, 30),
         Saw(600, 200, 30),
-        Saw(600, 600, 30),
         Orb(400, 100)                
     ]
 ]
@@ -393,7 +407,7 @@ JBMONO_16 = pygame.font.Font("fonts/JetBrains Mono.ttf", 16)
 JBMONO_40 = pygame.font.Font("fonts/JetBrains Mono.ttf", 40)
 
 home_title = Text(JBMONO_40, "confused", WIDTH // 2, HEIGHT // 2 - 100, 1, 1, (0, 0, 0))
-instructions_title = Text(JBMONO_40, "Instructions", WIDTH // 2, 100, 1, 1, (0, 0, 0))
+instructions_title = Text(JBMONO_40, "About", WIDTH // 2, HEIGHT // 2 - 100, 1, 1, (0, 0, 0))
 current_level_display = Text(JBMONO_16, "Level: 1", 30, 30, 0, 0, (0, 0, 0))
 money_display = Text(JBMONO_16, "$25", WIDTH - 30, 30, 2, 0, (0, 180, 0))
 
@@ -402,6 +416,24 @@ lose_subtext = Text(JBMONO_16, "get better nerd", WIDTH // 2, HEIGHT // 2 + 100,
 
 win_heading = Text(JBMONO_40, "You Win!", WIDTH // 2, HEIGHT // 2 - 100, 1, 1, (0, 200, 0))
 win_subtext = Text(JBMONO_16, "the government has been destroyed. congratulations.", WIDTH // 2, HEIGHT // 2 + 100, 1, 1, (0, 0, 0))
+
+instructions_line_1 = Text(JBMONO_16, "everything costs money. even breathing.", WIDTH // 2, HEIGHT // 2 + 85, 1, 1, (0, 0, 0))
+instructions_line_2 = Text(JBMONO_16, "designed, coded, and composed by hridhaan shetty.", WIDTH // 2, HEIGHT // 2 + 115, 1, 1, (0, 0, 0))
+
+instructions_back_button = Button(
+    font = JBMONO_16,
+    text = "← Back",
+    x = 30,
+    y = 30,
+    width = 30,
+    height = 30,
+    align_x = 0,
+    align_y = 0,
+    text_color = (0, 0, 0),
+    background_color = (255, 255, 255),
+    visible = False,
+    border_width = -1
+)
 
 play_button = Button(
     font = JBMONO_16, 
@@ -421,7 +453,7 @@ play_button = Button(
 
 instructions_button = Button(
     font = JBMONO_16, 
-    text = "Instructions", 
+    text = "About", 
     x = WIDTH // 2 + 170, 
     y = HEIGHT // 2 + 100, 
     width = 150, 
@@ -435,7 +467,7 @@ instructions_button = Button(
     border_width = 3
 )
 
-buttons = [play_button, instructions_button]
+buttons = [play_button, instructions_button, instructions_back_button]
 
 game_started = False
 level = 1
@@ -446,7 +478,13 @@ money = 25
 
 pickups = []
 
+frame = 1
+
+pygame.mixer.music.load("assets/bg.mp3")
+pygame.mixer.music.play(loops=-1)
+
 while True:
+    frame += 1
     clock.tick_busy_loop(120)
 
     for event in pygame.event.get():
@@ -462,7 +500,14 @@ while True:
                 button.hovered = button.isover(*event.pos)
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if play_button.isover(*event.pos):
+                select_sound.play()
                 screen = "playing"
+            elif instructions_button.isover(*event.pos):
+                select_sound.play()
+                screen = "about"
+            elif instructions_back_button.isover(*event.pos):
+                select_sound.play()
+                screen = "home"
 
     keys = pygame.key.get_pressed()
 
@@ -478,15 +523,28 @@ while True:
 
     win.fill((255, 255, 255))
 
+    if screen == "about":
+        instructions_back_button.visible = True
+    else:
+        instructions_back_button.visible = False
+
     if screen == "home":
         # Home screen
         home_title.display()
         for button in buttons:
             button.display()
-    elif screen == "instructions":
+    elif screen == "about":
+        instructions_back_button.display()
         instructions_title.display()
+        instructions_line_1.display()
+        instructions_line_2.display()
     elif screen == "playing" or screen == "transition":
+        if frame % 120 == 0:
+            money -= round((1.00001 ** (frame // 120)) / 100, 2)
+
         player.fall_acceleration = game_parameters["gravity"]
+        player.x_acceleration = game_parameters["x_accel"]
+        player.x_max_velocity = game_parameters["x_max"]
 
         current_level = levels[level - 1]
         platforms = get_platforms(current_level) + [ground, ]
@@ -513,12 +571,12 @@ while True:
 
         if acid:
             if acid.collide(player):
-                player.die()
-                money -= 2
+                money -= 0.5
 
         for pickup_index, pickup in enumerate(pickups):
             pickups[pickup_index].draw()
             if player.collide(pickups[pickup_index]):
+                pickup_sound.play()
                 pickups[pickup_index].trigger_effect()
                 money += random.randint(-200, 200) / 100
                 pickups[pickup_index] = None
@@ -558,11 +616,13 @@ while True:
                 last_level_value = level
                 level = last_level + 1
                 if level != last_level_value:
+                    pickups = []
                     money += 5
                 player.x = 0
                 player.y = HEIGHT - 50
                 if last_level == len(levels):
                     screen = "win"
+                    end_sound.play()
                 transition_surface.fill((0, 0, 0, ((30 - transition_frame) / 10) * 255))
 
             win.blit(transition_surface, (0, 0))
@@ -575,5 +635,8 @@ while True:
 
     if money < 0:
         screen = "lose"
+        if end_sound:
+            end_sound.play()
+        end_sound = None
 
     pygame.display.update()
